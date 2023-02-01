@@ -23,14 +23,17 @@ open class HiddenSecretsPlugin : Plugin<Project> {
         private const val KEY_PLACEHOLDER = "YOUR_KEY_GOES_HERE"
         private const val PACKAGE_PLACEHOLDER = "YOUR_PACKAGE_GOES_HERE"
         private const val KOTLIN_FILE_NAME = "Secrets.kt"
+        private const val JAVA_FILE_NAME = "Secrets.java"
 
         // Tasks
         const val TASK_GROUP = "Hide secrets"
         const val TASK_UNZIP_HIDDEN_SECRETS = "unzipHiddenSecrets"
         const val TASK_COPY_CPP = "copyCpp"
         const val TASK_COPY_KOTLIN = "copyKotlin"
+        const val TASK_COPY_JAVA = "copyJava"
         const val TASK_HIDE_SECRET = "hideSecret"
         const val TASK_HIDE_SECRET_FROM_PROPERTIES_FILE = "hideSecretFromPropertiesFile"
+        const val TASK_HIDE_SECRET_FROM_PROPERTIES_FILE_JAVA = "hideSecretFromPropertiesFileJava"
         const val TASK_OBFUSCATE = "obfuscate"
         const val TASK_PACKAGE_NAME = "packageName"
         const val TASK_FIND_KOTLIN_FILE = "findKotlinFile"
@@ -204,10 +207,26 @@ open class HiddenSecretsPlugin : Plugin<Project> {
         }
 
         /**
+         * @return empty template file for [JAVA_FILE_NAME]
+         */
+        fun tmpJavaFile(): File {
+            return project.file("$tmpFolder/java/").listFiles()
+                ?.first { it.name == JAVA_FILE_NAME }
+                ?: throw IllegalStateException("Did not find temporary template for secrets!")
+        }
+
+        /**
          * If found, returns the Secrets.kt file in the Android app
          */
         fun getKotlinFile(): File? {
             return Utils.findFileInProject(project, APP_MAIN_FOLDER, KOTLIN_FILE_NAME)
+        }
+
+        /**
+         * If found, returns the Secrets.java file in the Android app
+         */
+        fun getJavaFile(): File? {
+            return Utils.findFileInProject(project, APP_MAIN_FOLDER, JAVA_FILE_NAME)
         }
 
         /**
@@ -220,7 +239,7 @@ open class HiddenSecretsPlugin : Plugin<Project> {
                 if (!overwrite && destination.exists()) {
                     println("${it.name} already exists")
                 } else {
-                    println("Copy $it.name to\n$destination")
+                    println("Copy ${it.name} to\n$destination")
                     it.copyTo(destination, true)
                 }
             }
@@ -247,7 +266,35 @@ open class HiddenSecretsPlugin : Plugin<Project> {
                     if (destination.exists()) {
                         println("${it.name} already exists")
                     } else {
-                        println("Copy $it.name to\n$destination")
+                        println("Copy ${it.name} to\n$destination")
+                        it.copyTo(destination, true)
+                    }
+                }
+            }
+        }
+
+        /**
+         * Copy Java file Secrets.java from the lib to the Android project
+         * @param overwrite whether to overwrite existing files
+         */
+        fun copyJavaFile(overwrite: Boolean = false) {
+            val existingJavaFile: File? = getJavaFile()
+            if (existingJavaFile != null) {
+                if (overwrite) {
+                    println("Overwriting existing $JAVA_FILE_NAME.")
+                    tmpJavaFile().copyTo(existingJavaFile, true)
+                } else {
+                    println("$JAVA_FILE_NAME already exists")
+                    return
+                }
+            } else {
+                val packageName = getPackageNameParam()
+                project.file("$tmpFolder/java/").listFiles()?.forEach {
+                    val destination = getKotlinDestination(packageName, it.name)
+                    if (destination.exists()) {
+                        println("${it.name} already exists")
+                    } else {
+                        println("Copy ${it.name} to\n$destination")
                         it.copyTo(destination, true)
                     }
                 }
@@ -318,6 +365,70 @@ open class HiddenSecretsPlugin : Plugin<Project> {
         }
 
         /**
+         * Main method of the project: add Cpp and Java files to your project if necessary,
+         * obfuscate your secret key and add it to your project.
+         */
+        fun hideSecretJava(
+            keyName: String,
+            packageName: String,
+            obfuscatedKey: String
+        ) {
+            // Add method in Java code
+            var secretsJava = getJavaFile()
+            if (secretsJava == null) {
+                // File not found in project
+                secretsJava = getKotlinDestination(packageName, JAVA_FILE_NAME)
+            }
+            if (secretsJava.exists()) {
+                var text = secretsJava.readText(Charset.defaultCharset())
+                text = text.replace(PACKAGE_PLACEHOLDER, packageName)
+                if (text.contains(keyName)) {
+                    println("⚠️ Method already added in Java !")
+                }
+                text = text.dropLast(1)
+                text += CodeGenerator.getJavaCode(keyName)
+                secretsJava.writeText(text)
+            } else {
+                error("Missing Java file, please run gradle task : $TASK_COPY_JAVA")
+            }
+            // Resolve package name for C++ from the one used in Java file
+            var javaPackage = Utils.getJavaFilePackage(secretsJava)
+            if (javaPackage.isEmpty()) {
+                println("Empty package in $JAVA_FILE_NAME")
+                javaPackage = packageName
+            }
+
+            // Add obfuscated key in C++ code
+            val secretsCpp = getCppDestination("secrets.cpp")
+            if (secretsCpp.exists()) {
+                var text = secretsCpp.readText(Charset.defaultCharset())
+                if (text.contains(obfuscatedKey)) {
+                    println("⚠️ Key already added in C++ !")
+                }
+                // Escape required characters
+                val cppKeyName = Utils.getCppName(keyName)
+                if (text.contains(KEY_PLACEHOLDER)) {
+                    // Edit placeholder key
+                    // Replace package name
+                    text = text.replace(PACKAGE_PLACEHOLDER, Utils.getCppName(javaPackage))
+                    // Replace key name
+                    text = text.replace("YOUR_KEY_NAME_GOES_HERE", cppKeyName)
+                    // Replace demo key
+                    text = text.replace(KEY_PLACEHOLDER, obfuscatedKey)
+                    secretsCpp.writeText(text)
+                } else {
+                    // Add new key
+                    text += CodeGenerator.getCppCode(javaPackage, cppKeyName, obfuscatedKey)
+                    secretsCpp.writeText(text)
+                }
+            } else {
+                error("Missing C++ file, please run gradle task : $TASK_COPY_CPP")
+            }
+            println("✅ You can now get your secret key by calling : new Secrets().get$keyName(getPackageName())")
+        }
+
+
+        /**
          * Unzip plugin into tmp directory
          */
         project.tasks.create(TASK_UNZIP_HIDDEN_SECRETS, Copy::class.java,
@@ -355,6 +466,18 @@ open class HiddenSecretsPlugin : Plugin<Project> {
             this.description = "Copy Kotlin file to your project"
             doLast {
                 copyKotlinFile()
+            }
+        }
+
+        /**
+         * Copy Java file to your project
+         */
+        project.task(TASK_COPY_JAVA)
+        {
+            this.group = TASK_GROUP
+            this.description = "Copy Java file to your project"
+            doLast {
+                copyJavaFile()
             }
         }
 
@@ -416,6 +539,32 @@ open class HiddenSecretsPlugin : Plugin<Project> {
                     val keyName = entry.key as String
                     val obfuscatedKey = Utils.encodeSecret(entry.value as String, packageName)
                     hideSecret(keyName, packageName, obfuscatedKey)
+                }
+            }
+        }
+
+        /**
+         * Clean all secret hidden keys in your project and obfuscate all keys from the properties file in a Java class
+         */
+        project.task(TASK_HIDE_SECRET_FROM_PROPERTIES_FILE_JAVA)
+        {
+            this.group = TASK_GROUP
+            this.description = "Re-generate and obfuscate keys from properties file and add it to your Android project"
+            dependsOn(TASK_UNZIP_HIDDEN_SECRETS)
+
+            doLast {
+                // Create a clean copy of dependency files
+                copyCppFiles(true)
+                copyJavaFile(true)
+
+                val packageName = getPackageNameParam()
+                val propsFile = getPropertiesFile()
+                val props = getPropertiesFromFile(propsFile = propsFile)
+                println("Generating secrets from props: ${propsFile.path}")
+                props.entries.forEach { entry ->
+                    val keyName = entry.key as String
+                    val obfuscatedKey = Utils.encodeSecret(entry.value as String, packageName)
+                    hideSecretJava(keyName, packageName, obfuscatedKey)
                 }
             }
         }

@@ -28,4 +28,12 @@ object CodeGenerator {
         return "\n    external fun get$keyName(packageName: String): String\n" +
                 "}"
     }
+
+    /**
+     * Java code that will be added in your project
+     */
+    fun getJavaCode(keyName: String): String {
+        return "\n    native String get$keyName(String packageName);\n" +
+            "}"
+    }
 }

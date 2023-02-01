@@ -89,4 +89,17 @@ object Utils {
         println("Package : $text found in ${file.name}")
         return text
     }
+
+    /**
+     * Return package from first line of a Java file
+     */
+    fun getJavaFilePackage(file: File): String {
+        var text = file.readLines(Charset.defaultCharset())[0]
+        text = text.replace("package ", "")
+        // Handle package name using keywords
+        text = text.replace("`", "")
+        text = text.replace(";", "")
+        println("Package : $text found in ${file.name}")
+        return text
+    }
 }
