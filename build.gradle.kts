@@ -8,6 +8,7 @@ plugins {
 repositories {
     mavenCentral()
     google()
+    maven("https://jitpack.io")
     maven("https://maven.pkg.jetbrains.space/public/p/kotlinx-html/maven") // Required by detekt
 }
 
@@ -22,13 +23,13 @@ dependencies {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(8))
+        languageVersion.set(JavaLanguageVersion.of(11))
     }
 }
 
 pluginBundle {
-    website = "https://github.com/klaxit/hidden-secrets-gradle-plugin"
-    vcsUrl = "https://github.com/klaxit/hidden-secrets-gradle-plugin.git"
+    website = "https://github.com/valllllll2000/hidden-secrets-gradle-plugin"
+    vcsUrl = "https://github.com/valllllll2000/hidden-secrets-gradle-plugin.git"
     tags = listOf("android", "hide", "secret", "key", "string", "obfuscate")
 }
 

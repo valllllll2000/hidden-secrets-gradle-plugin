@@ -1,3 +1,5 @@
+# 0.2.2
+Ability to re-generate secrets from .properties file into a Java class
 # 0.2.1
 ### Fixes
 * Convert key names to C++ style to avoid `No implementation found` error
